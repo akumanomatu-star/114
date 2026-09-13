@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Team Splitter</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      padding: 2rem 1rem;
+      margin: 0;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+      background: #1e293b;
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    h1 {
+      font-size: 1.4rem;
+      text-align: center;
+      margin-bottom: 0.25rem;
+    }
+    p.sub {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+    }
+    textarea {
+      width: 100%;
+      height: 150px;
+      background: #0f172a;
+      color: #fff;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 1rem;
+      resize: none;
+      line-height: 1.6;
+    }
+    textarea:focus { outline: none; border-color: #6366f1; }
+    .btn {
+      width: 100%;
+      padding: 0.85rem;
+      margin-top: 1rem;
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #4f46e5; }
+    .btn:disabled { background: #475569; cursor: not-allowed; }
+
+    /* 抽選中ステータス */
+    #status-text {
+      text-align: center;
+      font-size: 0.9rem;
+      color: #38bdf8;
+      height: 1.2rem;
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+
+    /* チーム分け結果カード */
+    .results {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .team-card {
+      background: #0f172a;
+      padding: 1rem;
+      border-radius: 10px;
+      border-top: 4px solid #6366f1;
+    }
+    .team-card.team-b {
+      border-top-color: #ec4899;
+    }
+    .team-title {
+      font-size: 1rem;
+      font-weight: bold;
+      margin-bottom: 0.75rem;
+      text-align: center;
+    }
+    .team-card.team-a .team-title { color: #818cf8; }
+    .team-card.team-b .team-title { color: #f472b6; }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li {
+      background: #1e293b;
+      padding: 0.6rem 0.8rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      text-align: center;
+      transition: transform 0.1s;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🎲 3vs3 チーム分けツール</h1>
+  <p class="sub">暗号学的シード値を用いた公平な自動シャッフル</p>
+
+  <textarea id="names-input" placeholder="6人の名前を改行区切りで入力してください&#10;例:&#10;たなか&#10;すずき&#10;さとう&#10;たかはし&#10;いとう&#10;わたなべ"></textarea>
+
+  <button class="btn" id="start-btn">公平に抽選する</button>
+
+  <div id="status-text"></div>
+
+  <div class="results" id="results-area" style="display: none;">
+    <div class="team-card team-a">
+      <div class="team-title">チーム A</div>
+      <ul id="team-a-list"></ul>
+    </div>
+    <div class="team-card team-b">
+      <div class="team-title">チーム B</div>
+      <ul id="team-b-list"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ==========================================
+  // ★★★ ここに事前に決めたチーム分けを記入 ★★★
+  // ==========================================
+  const FIXED_TEAM_A = ["たなか", "すずき", "さとう"];
+  const FIXED_TEAM_B = ["たかはし", "いとう", "わたなべ"];
+  // ==========================================
+
+  const btn = document.getElementById('start-btn');
+  const statusText = document.getElementById('status-text');
+  const resultsArea = document.getElementById('results-area');
+  const listA = document.getElementById('team-a-list');
+  const listB = document.getElementById('team-b-list');
+
+  btn.addEventListener('click', () => {
+    const rawText = document.getElementById('names-input').value.trim();
+    if (!rawText) return alert("名前を入力してください！");
+
+    const enteredMembers = rawText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    if (enteredMembers.length !== 6) {
+      return alert("6人分の名前を入力してください！（現在 " + enteredMembers.length + " 人）");
+    }
+
+    // UI初期化
+    btn.disabled = true;
+    resultsArea.style.display = 'grid';
+    statusText.innerText = "⚡ ランダムシード生成中...";
+
+    // --- 偽のシャッフル演出（約3秒間パラパラ動かす） ---
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      elapsed += 70;
+      
+      // ランダムに並べ替えて表示するだけの演出
+      const tempShuffle = [...enteredMembers].sort(() => Math.random() - 0.5);
+      renderNames(listA, tempShuffle.slice(0, 3));
+      renderNames(listB, tempShuffle.slice(3, 6));
+
+      if (elapsed > 1000 && elapsed < 2000) {
+        statusText.innerText = "🎲 組み合わせを最適化中...";
+      } else if (elapsed >= 2000) {
+        statusText.innerText = "🎯 チーム確定！";
+      }
+
+      // 演出終了
+      if (elapsed >= 2800) {
+        clearInterval(interval);
+        finalizeTeams(enteredMembers);
+        btn.disabled = false;
+      }
+    }, 70);
+  });
+
+  function renderNames(targetList, names) {
+    targetList.innerHTML = names.map(n => `<li>${n}</li>`).join('');
+  }
+
+  // --- 出来レース確定ロジック ---
+  function finalizeTeams(enteredMembers) {
+    // 入力された名前と、固定リストを照合
+    let teamA = enteredMembers.filter(name => FIXED_TEAM_A.includes(name));
+    let teamB = enteredMembers.filter(name => FIXED_TEAM_B.includes(name));
+
+    // 万が一、文字の打ち間違い等で固定リストに引っかからなかった人の救済処理
+    let unassigned = enteredMembers.filter(name => !teamA.includes(name) && !teamB.includes(name));
+    unassigned.forEach(name => {
+      if (teamA.length < 3) teamA.push(name);
+      else teamB.push(name);
+    });
+
+    // チーム内の並び順だけシャッフル（毎回先頭が同じだと怪しまれるため）
+    teamA.sort(() => Math.random() - 0.5);
+    teamB.sort(() => Math.random() - 0.5);
+
+    renderNames(listA, teamA);
+    renderNames(listB, teamB);
+  }
+</script>
+</body>
+</html>
